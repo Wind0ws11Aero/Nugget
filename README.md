@@ -8,7 +8,7 @@ Customize your device with animated wallpapers, disable pesky daemons, and more!
 Make sure you have installed the [requirements](#requirements) if you are on Windows or Linux.
 
 > [!WARNING]
-> DO NOT USE THIS ON iOS 27! It will most likely result in data loss. Apple has patched the partial restore method that Nugget uses.
+> This fork implements a three-phase backup→tweak→restore workflow to prevent data loss on iOS 27. Apple has patched the partial restore method that Nugget uses, so applying tweaks directly now triggers a security response that wipes AppleID, Keychain, Photos and settings. This fork preserves your data by backing it up first, then restoring it after the tweak is applied (Photos recovering didn't tested).
 
 > [!NOTE]
 > Please back up your data before using this Project! Nugget may cause unforeseen problems, so it is better to be safe than sorry. We are not responsible for any damage done to your device.

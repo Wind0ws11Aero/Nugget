@@ -1,11 +1,16 @@
 from . import backup, perform_restore
 from .mbdb import _FileMode
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
+from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 import os
 import plistlib
 import ssl
+import tempfile
+import shutil
+import time
+from pathlib import Path
 
 class FileToRestore:
     def __init__(self,
@@ -140,6 +145,105 @@ def has_sparserestore_capability(lockdown_client: LockdownClient = None) -> bool
         minor = int(ver[1])
     return minor == 0
 
+def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownClient,
+                    progress_callback):
+    """iOS 27+ three-phase restore: backup → tweak → reboot → restore.
+
+    Phase 0: Enable backup encryption (required for KeychainDomain).
+    Phase 1: Selective backup of AppleID, Keychain, Photos, and user settings.
+    Phase 2: Apply tweaks → reboot (triggers iOS 27 security response).
+    Phase 3: Reconnect and restore Phase 1 backup from raw directory.
+    """
+    from .protective import (
+        collect_protective_files, enable_encryption,
+        clean_backup_for_restore,
+    )
+
+    udid = lockdown_client.udid
+
+    # === Phase 0: Enable encryption (KeychainDomain needs this) ===
+    enable_encryption(lockdown_client)
+
+    # === Phase 1: Selective backup (0–33%) ===
+    progress_callback(0)
+    protective_dir = tempfile.mkdtemp(prefix="nugget_protective_")
+    try:
+        collect_protective_files(
+            lockdown_client, protective_dir,
+            progress_callback=progress_callback,
+            backup_photos=True
+        )
+    except Exception:
+        shutil.rmtree(protective_dir, ignore_errors=True)
+        raise
+
+    # Clean empty placeholders and Manifest.db entries
+    backup_root = Path(protective_dir) / "device_backup"
+    clean_backup_for_restore(str(backup_root), udid)
+
+    progress_callback(33)
+
+    # === Phase 2: Apply tweaks → reboot (33–66%) ===
+    try:
+        perform_restore(backup=back, reboot=True,
+                        lockdown_client=lockdown_client,
+                        progress_callback=progress_callback)
+    except (ConnectionTerminatedError, ssl.SSLEOFError,
+            ConnectionAbortedError, ConnectionResetError):
+        pass
+
+    progress_callback(66)
+
+    # === Phase 3: Restore protective backup (66–100%) ===
+    # Use the cleaned raw backup directory — preserves real BackupKeyBag
+    # and per-file encryption keys needed for KeychainDomain restore.
+    from pymobiledevice3.exceptions import (
+        DeviceNotFoundError, PasswordRequiredError, NotPairedError,
+        ConnectionFailedError,
+    )
+    lc = None
+    for _ in range(24):
+        time.sleep(15)
+        try:
+            lc = create_using_usbmux(serial=udid, autopair=True)
+            break
+        except (DeviceNotFoundError, PasswordRequiredError, NotPairedError,
+                ConnectionFailedError):
+            pass
+
+    if lc is None:
+        raise DeviceNotFoundError(
+            f"Device {udid} not reachable after reboot. "
+            "Unlock the device and make sure it is connected via USB."
+        )
+
+    # Phase 3 needs the encryption password to decrypt Keychain and MediaDomain
+    _ENCRYPTION_PASSWORD = "nugget_tempkeychain_27"
+
+    with Mobilebackup2Service(lc) as mb:
+        mb.restore(
+            str(backup_root),
+            system=True, copy=True, remove=False,
+            reboot=reboot, source=udid,
+            skip_apps=True,
+            password=_ENCRYPTION_PASSWORD,
+            progress_callback=progress_callback
+        )
+
+    # Remove the temporary encryption password so future backups are
+    # unencrypted again (less friction for the user).
+    try:
+        with Mobilebackup2Service(lc) as mb:
+            mb.change_password(_ENCRYPTION_PASSWORD, "")
+    except Exception:
+        # Non-critical — if this fails the device keeps the password,
+        # but that doesn't break anything.
+        pass
+
+    shutil.rmtree(protective_dir, ignore_errors=True)
+    progress_callback(100)
+
+
 # files is a list of FileToRestore objects
 def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_client: LockdownClient = None, progress_callback = lambda x: None):
     # create the files to be backed up
@@ -177,12 +281,19 @@ def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_cli
                         container_content_class="Data/Application"
                     ))
 
-    # crash the restore to skip the setup (only works for exploit files)
-    if exploit_only:
+    # crash the restore to skip the setup (only works for exploit files, NOT on iOS 27+)
+    if exploit_only and (lockdown_client is None or int(lockdown_client.product_version.split(".")[0]) < 27):
         files_list.append(backup.ConcreteFile("", "SysContainerDomain-../../../../../../../.." + "/crash_on_purpose", contents=b""))
 
     # create the backup
     back = backup.Backup(files=files_list, apps=apps_list)
+
+    # iOS 27+: use three-phase protective backup + restore
+    if lockdown_client is not None:
+        ios_major = int(lockdown_client.product_version.split(".")[0])
+        if ios_major >= 27:
+            _restore_ios27(back, reboot, lockdown_client, progress_callback)
+            return
 
     for fi in files_list:
         print(f"{fi.domain}, {fi.path}")
