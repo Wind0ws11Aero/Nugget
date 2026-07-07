@@ -4059,7 +4059,7 @@ class Ui_Nugget(object):
         self.liquidGlassScrollArea.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         self.scrollAreaWidgetContents_3 = QWidget()
         self.scrollAreaWidgetContents_3.setObjectName(u"scrollAreaWidgetContents_3")
-        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 650, 500))
+        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 650, 1000))
         sizePolicy6.setHeightForWidth(self.scrollAreaWidgetContents_3.sizePolicy().hasHeightForWidth())
         self.scrollAreaWidgetContents_3.setSizePolicy(sizePolicy6)
         self.scrollAreaWidgetContents_3.setMinimumSize(QSize(650, 300))
@@ -4234,6 +4234,166 @@ class Ui_Nugget(object):
 
 
         self.verticalLayout_132.addWidget(self.disableSolariumHDRContent)
+
+        self.disallowGlassButtonsContent = QWidget(self.liquidGlassPageContent)
+        self.disallowGlassButtonsContent.setObjectName(u"disallowGlassButtonsContent")
+        sizePolicy5.setHeightForWidth(self.disallowGlassButtonsContent.sizePolicy().hasHeightForWidth())
+        self.disallowGlassButtonsContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_66 = QVBoxLayout(self.disallowGlassButtonsContent)
+        self.verticalLayout_66.setObjectName(u"verticalLayout_66")
+        self.verticalLayout_66.setContentsMargins(0, 0, 0, 0)
+        self.label_65 = QLabel(self.disallowGlassButtonsContent)
+        self.label_65.setObjectName(u"label_65")
+
+        self.verticalLayout_66.addWidget(self.label_65)
+
+        self.disallowGlassButtonsBtns = QHBoxLayout()
+        self.disallowGlassButtonsBtns.setObjectName(u"disallowGlassButtonsBtns")
+
+        self.verticalLayout_66.addLayout(self.disallowGlassButtonsBtns)
+
+
+        self.verticalLayout_132.addWidget(self.disallowGlassButtonsContent)
+
+        self.disallowGlassLockScreenContent = QWidget(self.liquidGlassPageContent)
+        self.disallowGlassLockScreenContent.setObjectName(u"disallowGlassLockScreenContent")
+        sizePolicy5.setHeightForWidth(self.disallowGlassLockScreenContent.sizePolicy().hasHeightForWidth())
+        self.disallowGlassLockScreenContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_67 = QVBoxLayout(self.disallowGlassLockScreenContent)
+        self.verticalLayout_67.setObjectName(u"verticalLayout_67")
+        self.verticalLayout_67.setContentsMargins(0, 0, 0, 0)
+        self.label_66 = QLabel(self.disallowGlassLockScreenContent)
+        self.label_66.setObjectName(u"label_66")
+
+        self.verticalLayout_67.addWidget(self.label_66)
+
+        self.disallowGlassLockScreenBtns = QHBoxLayout()
+        self.disallowGlassLockScreenBtns.setObjectName(u"disallowGlassLockScreenBtns")
+
+        self.verticalLayout_67.addLayout(self.disallowGlassLockScreenBtns)
+
+
+        self.verticalLayout_132.addWidget(self.disallowGlassLockScreenContent)
+
+        self.forceEnhancedSpecularsContent = QWidget(self.liquidGlassPageContent)
+        self.forceEnhancedSpecularsContent.setObjectName(u"forceEnhancedSpecularsContent")
+        sizePolicy5.setHeightForWidth(self.forceEnhancedSpecularsContent.sizePolicy().hasHeightForWidth())
+        self.forceEnhancedSpecularsContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_68 = QVBoxLayout(self.forceEnhancedSpecularsContent)
+        self.verticalLayout_68.setObjectName(u"verticalLayout_68")
+        self.verticalLayout_68.setContentsMargins(0, 0, 0, 0)
+        self.label_67 = QLabel(self.forceEnhancedSpecularsContent)
+        self.label_67.setObjectName(u"label_67")
+
+        self.verticalLayout_68.addWidget(self.label_67)
+
+        self.forceEnhancedSpecularsBtns = QHBoxLayout()
+        self.forceEnhancedSpecularsBtns.setObjectName(u"forceEnhancedSpecularsBtns")
+
+        self.verticalLayout_68.addLayout(self.forceEnhancedSpecularsBtns)
+
+
+        self.verticalLayout_132.addWidget(self.forceEnhancedSpecularsContent)
+
+        self.forceSolariumIntelligenceContent = QWidget(self.liquidGlassPageContent)
+        self.forceSolariumIntelligenceContent.setObjectName(u"forceSolariumIntelligenceContent")
+        sizePolicy5.setHeightForWidth(self.forceSolariumIntelligenceContent.sizePolicy().hasHeightForWidth())
+        self.forceSolariumIntelligenceContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_69 = QVBoxLayout(self.forceSolariumIntelligenceContent)
+        self.verticalLayout_69.setObjectName(u"verticalLayout_69")
+        self.verticalLayout_69.setContentsMargins(0, 0, 0, 0)
+        self.label_68 = QLabel(self.forceSolariumIntelligenceContent)
+        self.label_68.setObjectName(u"label_68")
+
+        self.verticalLayout_69.addWidget(self.label_68)
+
+        self.forceSolariumIntelligenceBtns = QHBoxLayout()
+        self.forceSolariumIntelligenceBtns.setObjectName(u"forceSolariumIntelligenceBtns")
+
+        self.verticalLayout_69.addLayout(self.forceSolariumIntelligenceBtns)
+
+
+        self.verticalLayout_132.addWidget(self.forceSolariumIntelligenceContent)
+
+        self.uiSolariumFallbackContent = QWidget(self.liquidGlassPageContent)
+        self.uiSolariumFallbackContent.setObjectName(u"uiSolariumFallbackContent")
+        sizePolicy5.setHeightForWidth(self.uiSolariumFallbackContent.sizePolicy().hasHeightForWidth())
+        self.uiSolariumFallbackContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_70 = QVBoxLayout(self.uiSolariumFallbackContent)
+        self.verticalLayout_70.setObjectName(u"verticalLayout_70")
+        self.verticalLayout_70.setContentsMargins(0, 0, 0, 0)
+        self.label_69 = QLabel(self.uiSolariumFallbackContent)
+        self.label_69.setObjectName(u"label_69")
+
+        self.verticalLayout_70.addWidget(self.label_69)
+
+        self.uiSolariumFallbackBtns = QHBoxLayout()
+        self.uiSolariumFallbackBtns.setObjectName(u"uiSolariumFallbackBtns")
+
+        self.verticalLayout_70.addLayout(self.uiSolariumFallbackBtns)
+
+
+        self.verticalLayout_132.addWidget(self.uiSolariumFallbackContent)
+
+        self.ignoreSolariumHardwareCheckContent = QWidget(self.liquidGlassPageContent)
+        self.ignoreSolariumHardwareCheckContent.setObjectName(u"ignoreSolariumHardwareCheckContent")
+        sizePolicy5.setHeightForWidth(self.ignoreSolariumHardwareCheckContent.sizePolicy().hasHeightForWidth())
+        self.ignoreSolariumHardwareCheckContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_71 = QVBoxLayout(self.ignoreSolariumHardwareCheckContent)
+        self.verticalLayout_71.setObjectName(u"verticalLayout_71")
+        self.verticalLayout_71.setContentsMargins(0, 0, 0, 0)
+        self.label_70 = QLabel(self.ignoreSolariumHardwareCheckContent)
+        self.label_70.setObjectName(u"label_70")
+
+        self.verticalLayout_71.addWidget(self.label_70)
+
+        self.ignoreSolariumHardwareCheckBtns = QHBoxLayout()
+        self.ignoreSolariumHardwareCheckBtns.setObjectName(u"ignoreSolariumHardwareCheckBtns")
+
+        self.verticalLayout_71.addLayout(self.ignoreSolariumHardwareCheckBtns)
+
+
+        self.verticalLayout_132.addWidget(self.ignoreSolariumHardwareCheckContent)
+
+        self.ignoreSolariumOptOutContent = QWidget(self.liquidGlassPageContent)
+        self.ignoreSolariumOptOutContent.setObjectName(u"ignoreSolariumOptOutContent")
+        sizePolicy5.setHeightForWidth(self.ignoreSolariumOptOutContent.sizePolicy().hasHeightForWidth())
+        self.ignoreSolariumOptOutContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_72 = QVBoxLayout(self.ignoreSolariumOptOutContent)
+        self.verticalLayout_72.setObjectName(u"verticalLayout_72")
+        self.verticalLayout_72.setContentsMargins(0, 0, 0, 0)
+        self.label_71 = QLabel(self.ignoreSolariumOptOutContent)
+        self.label_71.setObjectName(u"label_71")
+
+        self.verticalLayout_72.addWidget(self.label_71)
+
+        self.ignoreSolariumOptOutBtns = QHBoxLayout()
+        self.ignoreSolariumOptOutBtns.setObjectName(u"ignoreSolariumOptOutBtns")
+
+        self.verticalLayout_72.addLayout(self.ignoreSolariumOptOutBtns)
+
+
+        self.verticalLayout_132.addWidget(self.ignoreSolariumOptOutContent)
+
+        self.disableSpecularEverywhereContent = QWidget(self.liquidGlassPageContent)
+        self.disableSpecularEverywhereContent.setObjectName(u"disableSpecularEverywhereContent")
+        sizePolicy5.setHeightForWidth(self.disableSpecularEverywhereContent.sizePolicy().hasHeightForWidth())
+        self.disableSpecularEverywhereContent.setSizePolicy(sizePolicy5)
+        self.verticalLayout_73 = QVBoxLayout(self.disableSpecularEverywhereContent)
+        self.verticalLayout_73.setObjectName(u"verticalLayout_73")
+        self.verticalLayout_73.setContentsMargins(0, 0, 0, 0)
+        self.label_72 = QLabel(self.disableSpecularEverywhereContent)
+        self.label_72.setObjectName(u"label_72")
+
+        self.verticalLayout_73.addWidget(self.label_72)
+
+        self.disableSpecularEverywhereBtns = QHBoxLayout()
+        self.disableSpecularEverywhereBtns.setObjectName(u"disableSpecularEverywhereBtns")
+
+        self.verticalLayout_73.addLayout(self.disableSpecularEverywhereBtns)
+
+
+        self.verticalLayout_132.addWidget(self.disableSpecularEverywhereContent)
 
 
         self.verticalLayout_94.addWidget(self.liquidGlassPageContent)
@@ -6447,6 +6607,14 @@ class Ui_Nugget(object):
         self.label_54.setText(QCoreApplication.translate("Nugget", u"Disable Specular Motion", None))
         self.label_55.setText(QCoreApplication.translate("Nugget", u"Disable Outer Refraction", None))
         self.label_56.setText(QCoreApplication.translate("Nugget", u"Disable Solarium HDR", None))
+        self.label_65.setText(QCoreApplication.translate("Nugget", u"Disable Liquid Glass on Buttons", None))
+        self.label_66.setText(QCoreApplication.translate("Nugget", u"Disable Liquid Glass on Lock Screen", None))
+        self.label_67.setText(QCoreApplication.translate("Nugget", u"Force Enhanced Speculars", None))
+        self.label_68.setText(QCoreApplication.translate("Nugget", u"Force Solarium for Intelligence", None))
+        self.label_69.setText(QCoreApplication.translate("Nugget", u"UIKit Solarium Fallback", None))
+        self.label_70.setText(QCoreApplication.translate("Nugget", u"Ignore Solarium Hardware Check", None))
+        self.label_71.setText(QCoreApplication.translate("Nugget", u"Ignore Solarium Opt-Out", None))
+        self.label_72.setText(QCoreApplication.translate("Nugget", u"Disable Specular Everywhere", None))
         self.daemonsLbl.setText(QCoreApplication.translate("Nugget", u"Daemons", None))
         self.modifyDaemonsChk.setText(QCoreApplication.translate("Nugget", u"Modify", None))
         self.regularDomainsLbl.setText(QCoreApplication.translate("Nugget", u"Note: Even on Sparserestore versions, this uses regular domains. Skip Setup will be applied if you have\n"

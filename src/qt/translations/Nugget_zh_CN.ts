@@ -1820,6 +1820,38 @@ DO NOT unplug your device during restores.</source>
       <translation>关闭 Solarium 的高动态范围（HDR）效果</translation>
     </message>
     <message>
+      <source>Disable Liquid Glass on Buttons</source>
+      <translation>禁用按钮上的液态玻璃效果</translation>
+    </message>
+    <message>
+      <source>Disable Liquid Glass on Lock Screen</source>
+      <translation>禁用锁屏上的液态玻璃效果</translation>
+    </message>
+    <message>
+      <source>Force Enhanced Speculars</source>
+      <translation>强制增强镜面反射效果</translation>
+    </message>
+    <message>
+      <source>Force Solarium for Intelligence</source>
+      <translation>强制 AI 功能使用 Solarium</translation>
+    </message>
+    <message>
+      <source>UIKit Solarium Fallback</source>
+      <translation>UIKit 级别 Solarium 回退</translation>
+    </message>
+    <message>
+      <source>Ignore Solarium Hardware Check</source>
+      <translation>忽略 Solarium 硬件检测</translation>
+    </message>
+    <message>
+      <source>Ignore Solarium Opt-Out</source>
+      <translation>忽略 Solarium 退出声明</translation>
+    </message>
+    <message>
+      <source>Disable Specular Everywhere</source>
+      <translation>全局禁用镜面效果（简化版）</translation>
+    </message>
+    <message>
       <location filename="../mainwindow.ui" line="1708"/>
       <source>Duy Tran
 bl_sbx</source>
