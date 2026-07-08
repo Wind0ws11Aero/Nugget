@@ -16,6 +16,7 @@ class FileLocation(Enum):
     
     # Internal Options
     globalPreferences = "/var/Managed Preferences/mobile/.GlobalPreferences.plist"
+    globalPreferencesHomeDomain = "/var/mobile/Library/Preferences/.GlobalPreferences.plist"
     appStore = "/var/Managed Preferences/mobile/com.apple.AppStore.plist"
     backboardd = "/var/Managed Preferences/mobile/com.apple.backboardd.plist"
     coreMotion = "/var/Managed Preferences/mobile/com.apple.CoreMotion.plist"

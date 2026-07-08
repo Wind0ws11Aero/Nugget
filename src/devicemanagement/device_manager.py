@@ -603,8 +603,11 @@ class DeviceManager:
                 if skips_br_for_folders:
                     msg += QCoreApplication.tr("\n\nYou should now be able to apply Feature Flags with BookRestore.")
         return ApplyAlertMessage(txt=QCoreApplication.tr("All done! ") + msg, title=QCoreApplication.tr("Success!"), icon=QMessageBox.Information)
-    def progress_callback(self, progress: int):
+    def progress_callback(self, progress):
         if self.update_label == None:
+            return
+        if isinstance(progress, str):
+            self.update_label(progress)
             return
         prog = ""
         if progress != None:
@@ -756,6 +759,19 @@ class DeviceManager:
                     files_to_restore=files_to_restore,
                     owner=ownership, group=ownership, use_bookrestore=use_bookrestore
                 )
+            # iOS 27+: Also write .GlobalPreferences.plist to HomeDomain so
+            # tweaks that depend on it survive the Phase 3 protective backup restore.
+            # ManagedPreferencesDomain is the primary location; HomeDomain is a
+            # secondary copy for iOS 27 compatibility.
+            if (FileLocation.globalPreferences in basic_plists
+                    and Version(self.get_current_device_version()) >= Version("27.0")):
+                self.concat_file(
+                    contents=plistlib.dumps(basic_plists[FileLocation.globalPreferences]),
+                    path=FileLocation.globalPreferencesHomeDomain.value,
+                    files_to_restore=files_to_restore,
+                    owner=501, group=501, use_bookrestore=use_bookrestore
+                )
+
             for location, data in files_data.items():
                 if isinstance(data, NullifyFileTweak):
                     ownership = data.owner

@@ -8,7 +8,7 @@ from .mbdb import _FileMode
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
-from pymobiledevice3.exceptions import ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, PyMobileDevice3Exception
 import os
 import plistlib
 import ssl
@@ -154,22 +154,21 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
                     progress_callback):
     """iOS 27+ three-phase restore: backup → tweak → reboot → restore.
 
-    Phase 0: Enable backup encryption (required for KeychainDomain).
-    Phase 1: Selective backup of AppleID, Keychain, Photos, and user settings.
+    Phase 1: Selective backup of AppleID, Photos, and user settings.
+             (KeychainDomain is skipped for speed — no encryption overhead.)
     Phase 2: Apply tweaks → reboot (triggers iOS 27 security response).
     Phase 3: Reconnect and restore Phase 1 backup from raw directory.
     """
     from .protective import (
-        collect_protective_files, enable_encryption,
-        clean_backup_for_restore,
+        collect_protective_files, clean_backup_for_restore,
     )
 
     udid = lockdown_client.udid
 
-    # === Phase 0: Enable encryption (KeychainDomain needs this) ===
-    enable_encryption(lockdown_client)
-
     # === Phase 1: Selective backup (0–33%) ===
+    # KeychainDomain is intentionally skipped: enabling backup encryption
+    # is slow and Keychain data (WiFi passwords, Apple ID credentials)
+    # is not essential for tweak functionality.
     progress_callback(0)
     protective_dir = tempfile.mkdtemp(prefix="nugget_protective_")
     try:
@@ -200,8 +199,8 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
     progress_callback(66)
 
     # === Phase 3: Restore protective backup (66–100%) ===
-    # Use the cleaned raw backup directory — preserves real BackupKeyBag
-    # and per-file encryption keys needed for KeychainDomain restore.
+    # Uses the cleaned raw backup directory — preserves real BackupKeyBag
+    # and per-file encryption keys for any previously-encrypted domains.
     from pymobiledevice3.exceptions import (
         DeviceNotFoundError, PasswordRequiredError, NotPairedError,
         ConnectionFailedError,
@@ -222,28 +221,39 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
             "Unlock the device and make sure it is connected via USB."
         )
 
-    # Phase 3 needs the encryption password to decrypt Keychain and MediaDomain
-    _ENCRYPTION_PASSWORD = "nugget_tempkeychain_27"
+    # SpringBoard may still be launching after a fresh reboot.
+    # Without this wait the restore can fail with MBErrorDomain/1
+    # ("Timeout waiting for SpringBoard notification that it's ready for a restore").
+    progress_callback("Waiting for SpringBoard to finish launching...")
+    time.sleep(10)
 
-    with Mobilebackup2Service(lc) as mb:
-        mb.restore(
-            str(backup_root),
-            system=True, copy=True, remove=False,
-            reboot=reboot, source=udid,
-            skip_apps=True,
-            password=_ENCRYPTION_PASSWORD,
-            progress_callback=progress_callback
-        )
-
-    # Remove the temporary encryption password so future backups are
-    # unencrypted again (less friction for the user).
-    try:
-        with Mobilebackup2Service(lc) as mb:
-            mb.change_password(_ENCRYPTION_PASSWORD, "")
-    except Exception:
-        # Non-critical — if this fails the device keeps the password,
-        # but that doesn't break anything.
-        pass
+    # Retry loop: SpringBoard on iOS 27 beta can be slow to signal readiness.
+    # We retry up to 6 times with 10-second waits between attempts.
+    max_springboard_retries = 6
+    for attempt in range(max_springboard_retries):
+        try:
+            with Mobilebackup2Service(lc) as mb:
+                mb.restore(
+                    str(backup_root),
+                    system=True, copy=True, remove=False,
+                    reboot=reboot, source=udid,
+                    skip_apps=True,
+                    progress_callback=progress_callback
+                )
+            break  # restore succeeded
+        except PyMobileDevice3Exception as e:
+            err_msg = str(e)
+            # MBErrorDomain/1: SpringBoard not ready yet
+            is_springboard_error = (
+                "SpringBoard" in err_msg and "ready for a restore" in err_msg
+            )
+            if is_springboard_error and attempt < max_springboard_retries - 1:
+                progress_callback(
+                    f"SpringBoard not ready, retrying ({attempt + 1}/{max_springboard_retries})..."
+                )
+                time.sleep(10)
+                continue
+            raise
 
     shutil.rmtree(protective_dir, ignore_errors=True)
     progress_callback(100)

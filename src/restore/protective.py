@@ -205,11 +205,13 @@ class _FastBackupService(Mobilebackup2Service):
         finally:
             dl.disconnect()
 
-# Domains whose files should be extracted for data protection
+# Domains whose files should be extracted for data protection.
+# KeychainDomain is intentionally excluded: enabling backup encryption
+# is slow and Keychain data (WiFi passwords, Apple ID credentials)
+# is not essential for tweak functionality.
 PROTECTIVE_DOMAINS = {
     "CameraRollDomain",  # Actual photos and videos (DCIM/)
     "MediaDomain",       # Photo metadata (PhotoData/), PhotoStream, other media
-    "KeychainDomain",    # Keychain items (encrypted backups only)
 }
 
 # Specific path prefixes within HomeDomain that contain Apple ID account data
@@ -226,6 +228,7 @@ APPLE_ID_PATH_PREFIXES = [
 # With copy=True, the existing data on the device is preserved anyway.
 _SKIP_FILES = frozenset({
     "keychain-backup.plist",  # iOS validates protection class, rejects flags=4
+    ".GlobalPreferences.plist",  # Written separately as tweaks; skip to avoid overwrite on restore
 })
 
 
@@ -317,8 +320,9 @@ def _as_int(value, default=0):
 def _is_protective_file(domain: str, relative_path: str, backup_photos: bool = True) -> bool:
     """Check if a file should be included in the protective backup.
 
-    Apple ID and Keychain are always backed up. Photos (MediaDomain) are
-    only included when backup_photos is True.
+    Apple ID accounts and user settings are always backed up.
+    KeychainDomain is intentionally skipped (no encryption needed).
+    Photos (MediaDomain) are only included when backup_photos is True.
 
     Files in _SKIP_FILES are excluded even within protective domains —
     these are special files that iOS manages internally and will reject
@@ -330,8 +334,6 @@ def _is_protective_file(domain: str, relative_path: str, backup_photos: bool = T
     filename = os.path.basename(relative_path)
     if filename in _SKIP_FILES:
         return False
-    if domain == "KeychainDomain":
-        return True
     if domain == "HomeDomain":
         for prefix in APPLE_ID_PATH_PREFIXES:
             if relative_path.startswith(prefix):
