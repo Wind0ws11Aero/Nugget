@@ -207,11 +207,18 @@ async def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: Loc
     # and per-file encryption keys for any previously-encrypted domains.
     from pymobiledevice3.exceptions import (
         DeviceNotFoundError, PasswordRequiredError, NotPairedError,
-        ConnectionFailedError,
+        ConnectionFailedError, InvalidServiceError,
     )
     lc = None
-    for _ in range(24):
-        time.sleep(15)
+    # iOS 27 security response can take several minutes:
+    # Apple logo → reboot → progress bar (like erase all contents) → full boot.
+    # Wait up to 20 minutes (40 × 30s) for the device to become available.
+    for retry in range(40):
+        progress_callback(
+            f"Waiting for device after security recovery "
+            f"({retry + 1}/40)..."
+        )
+        time.sleep(30)
         try:
             lc = await create_using_usbmux(serial=udid, autopair=True)
             break
@@ -231,10 +238,11 @@ async def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: Loc
     progress_callback("Waiting for SpringBoard to finish launching...")
     time.sleep(10)
 
-    # Retry loop: SpringBoard on iOS 27 beta can be slow to signal readiness.
-    # We retry up to 6 times with 10-second waits between attempts.
-    max_springboard_retries = 6
-    for attempt in range(max_springboard_retries):
+    # Retry loop: iOS 27 post-security-recovery can be slow.
+    # mobilebackup2 service may be refused (InvalidServiceError) until
+    # SpringBoard fully launches.
+    max_restore_retries = 12
+    for attempt in range(max_restore_retries):
         try:
             async with Mobilebackup2Service(lc) as mb:
                 await mb.restore(
@@ -245,17 +253,22 @@ async def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: Loc
                     progress_callback=progress_callback
                 )
             break  # restore succeeded
-        except PyMobileDevice3Exception as e:
+        except (PyMobileDevice3Exception, InvalidServiceError,
+                ConnectionTerminatedError, OSError) as e:
             err_msg = str(e)
             # MBErrorDomain/1: SpringBoard not ready yet
             is_springboard_error = (
                 "SpringBoard" in err_msg and "ready for a restore" in err_msg
             )
-            if is_springboard_error and attempt < max_springboard_retries - 1:
+            is_service_error = (
+                "InvalidService" in type(e).__name__
+                or "start" in err_msg.lower() and "service" in err_msg.lower()
+            )
+            if (is_springboard_error or is_service_error) and attempt < max_restore_retries - 1:
                 progress_callback(
-                    f"SpringBoard not ready, retrying ({attempt + 1}/{max_springboard_retries})..."
+                    f"Device not ready, retrying ({attempt + 1}/{max_restore_retries})..."
                 )
-                time.sleep(10)
+                time.sleep(15)
                 continue
             raise
 
