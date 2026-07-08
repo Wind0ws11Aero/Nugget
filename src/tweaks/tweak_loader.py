@@ -414,6 +414,39 @@ def load_liquidglass():
             FileLocation.globalPreferences,
             "SolariumAllowHDR",
             value=False
+        ),
+        # === iOS 27 additions ===
+        TweakID.DisallowGlassButtons: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "SBDisallowGlassButtons"
+        ),
+        TweakID.DisallowGlassLockScreen: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "SBDisallowGlassLockScreen"
+        ),
+        TweakID.ForceEnhancedSpeculars: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "SolariumForceEnhancedSpeculars"
+        ),
+        TweakID.ForceSolariumIntelligence: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "SolariumForceIntelligence"
+        ),
+        TweakID.UISolariumFallback: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "UISolariumForceFallback"
+        ),
+        TweakID.IgnoreSolariumHardwareCheck: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "com.apple.SwiftUI.IgnoreSolariumHardwareCheck"
+        ),
+        TweakID.IgnoreSolariumOptOut: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "com.apple.SwiftUI.IgnoreSolariumOptOut"
+        ),
+        TweakID.DisableSpecularEverywhere: BasicPlistTweak(
+            FileLocation.globalPreferences,
+            "SBDisableSpecularEverywhere"
         )
     }
     tweaks.update(additional_tweaks)

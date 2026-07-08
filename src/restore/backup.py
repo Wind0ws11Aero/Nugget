@@ -29,6 +29,8 @@ class ConcreteFile(BackupFile):
     group: int = 0
     inode: Optional[int] = None
     mode: _FileMode = DEFAULT
+    key: bytes = b""
+    flags: int = 4
 
     hash: bytes = None
     size: int = None
@@ -53,7 +55,7 @@ class ConcreteFile(BackupFile):
             filename=self.path,
             link="",
             hash=self.hash,
-            key=b"",
+            key=self.key,
             mode=self.mode | _FileMode.S_IFREG,
             #unknown2=0,
             #unknown3=0,
@@ -64,7 +66,7 @@ class ConcreteFile(BackupFile):
             atime=int(datetime.now().timestamp()),
             ctime=int(datetime.now().timestamp()),
             size=self.size,
-            flags=4,
+            flags=self.flags,
             properties=[]
         )
 

@@ -898,6 +898,38 @@ Please be careful!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Disable Liquid Glass on Buttons</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disable Liquid Glass on Lock Screen</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Force Enhanced Speculars</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Force Solarium for Intelligence</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>UIKit Solarium Fallback</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ignore Solarium Hardware Check</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ignore Solarium Opt-Out</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disable Specular Everywhere</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../mainwindow.ui" line="9173"/>
         <source>   Export as .tendies</source>
         <translation type="unfinished"></translation>

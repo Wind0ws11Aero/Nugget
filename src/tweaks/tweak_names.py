@@ -110,6 +110,15 @@ class TweakID(Enum):
     DisableSpecularMotion = auto()
     DisableOuterRefraction = auto()
     DisableSolariumHDR = auto()
+    # iOS 27 additions
+    DisallowGlassButtons = auto()
+    DisallowGlassLockScreen = auto()
+    ForceEnhancedSpeculars = auto()
+    ForceSolariumIntelligence = auto()
+    UISolariumFallback = auto()
+    IgnoreSolariumHardwareCheck = auto()
+    IgnoreSolariumOptOut = auto()
+    DisableSpecularEverywhere = auto()
 
     # risky
     DisableOTAFile = auto()

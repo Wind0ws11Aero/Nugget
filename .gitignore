@@ -11,3 +11,7 @@ __pycache__
 .create_build.sh
 /.vscode
 *.dll
+iOS27_FIX.md
+.workbuddy
+my_backup
+homedomain_extracted
