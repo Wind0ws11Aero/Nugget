@@ -1,3 +1,8 @@
+import asyncio
+import os
+import plistlib
+import ssl
+
 from . import backup, perform_restore
 from .mbdb import _FileMode
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
@@ -255,7 +260,7 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
 
 
 # files is a list of FileToRestore objects
-def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_client: LockdownClient = None, progress_callback = lambda x: None):
+async def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_client: LockdownClient = None, progress_callback = lambda x: None):
     # create the files to be backed up
     files_list = [
     ]
@@ -281,7 +286,8 @@ def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_cli
                 bundle_id = last_domain.removeprefix("AppDomain-")
                 if not bundle_id in active_bundle_ids:
                     if apps == None:
-                        apps = InstallationProxyService(lockdown=lockdown_client).get_apps(application_type="Any", calculate_sizes=False)
+                        async with InstallationProxyService(lockdown=lockdown_client) as ips:
+                            apps = await ips.get_apps(application_type="Any", calculate_sizes=False)
                     app_info = apps[bundle_id]
                     active_bundle_ids.append(bundle_id)
                     apps_list.append(backup.AppBundle(
@@ -309,7 +315,7 @@ def restore_files(files: list[FileToRestore], reboot: bool = False, lockdown_cli
         print(f"{fi.domain}, {fi.path}")
 
     try:
-        perform_restore(backup=back, reboot=reboot, lockdown_client=lockdown_client, progress_callback=progress_callback)
+        await perform_restore(backup=back, reboot=reboot, lockdown_client=lockdown_client, progress_callback=progress_callback)
     except (ConnectionTerminatedError, ssl.SSLEOFError, ConnectionAbortedError, ConnectionResetError):
         # These errors usually mean the device rebooted successfully before acknowledging the restore.
         # We catch them and treat the process as successful.
