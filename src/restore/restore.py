@@ -9,6 +9,10 @@ from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from pymobiledevice3.exceptions import ConnectionTerminatedError, PyMobileDevice3Exception
+import pymobiledevice3.service_connection as _sc
+
+# Bump SSL handshake timeout — 10 seconds is too tight for post-reboot devices.
+_sc.DEFAULT_SSL_HANDSHAKE_TIMEOUT = 60
 import os
 import plistlib
 import ssl
@@ -150,7 +154,7 @@ def has_sparserestore_capability(lockdown_client: LockdownClient = None) -> bool
         minor = int(ver[1])
     return minor == 0
 
-def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownClient,
+async def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownClient,
                     progress_callback):
     """iOS 27+ three-phase restore: backup → tweak → reboot → restore.
 
@@ -172,7 +176,7 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
     progress_callback(0)
     protective_dir = tempfile.mkdtemp(prefix="nugget_protective_")
     try:
-        collect_protective_files(
+        await collect_protective_files(
             lockdown_client, protective_dir,
             progress_callback=progress_callback,
             backup_photos=True
@@ -189,9 +193,9 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
 
     # === Phase 2: Apply tweaks → reboot (33–66%) ===
     try:
-        perform_restore(backup=back, reboot=True,
-                        lockdown_client=lockdown_client,
-                        progress_callback=progress_callback)
+        await perform_restore(backup=back, reboot=True,
+                              lockdown_client=lockdown_client,
+                              progress_callback=progress_callback)
     except (ConnectionTerminatedError, ssl.SSLEOFError,
             ConnectionAbortedError, ConnectionResetError):
         pass
@@ -209,7 +213,7 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
     for _ in range(24):
         time.sleep(15)
         try:
-            lc = create_using_usbmux(serial=udid, autopair=True)
+            lc = await create_using_usbmux(serial=udid, autopair=True)
             break
         except (DeviceNotFoundError, PasswordRequiredError, NotPairedError,
                 ConnectionFailedError):
@@ -232,8 +236,8 @@ def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownC
     max_springboard_retries = 6
     for attempt in range(max_springboard_retries):
         try:
-            with Mobilebackup2Service(lc) as mb:
-                mb.restore(
+            async with Mobilebackup2Service(lc) as mb:
+                await mb.restore(
                     str(backup_root),
                     system=True, copy=True, remove=False,
                     reboot=reboot, source=udid,
@@ -308,7 +312,7 @@ async def restore_files(files: list[FileToRestore], reboot: bool = False, lockdo
     if lockdown_client is not None:
         ios_major = int(lockdown_client.product_version.split(".")[0])
         if ios_major >= 27:
-            _restore_ios27(back, reboot, lockdown_client, progress_callback)
+            await _restore_ios27(back, reboot, lockdown_client, progress_callback)
             return
 
     for fi in files_list:

@@ -23,6 +23,10 @@ from pymobiledevice3.exceptions import MuxException, PasswordRequiredError, Conn
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.afc import AfcService
+import pymobiledevice3.service_connection as _sc
+
+# Bump SSL handshake timeout from 10s to 60s for all lockdown services.
+_sc.DEFAULT_SSL_HANDSHAKE_TIMEOUT = 60
 
 from src.devicemanagement.constants import Device, Version
 from src.devicemanagement.data_singleton import DataSingleton

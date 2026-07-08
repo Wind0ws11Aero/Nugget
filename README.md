@@ -15,7 +15,7 @@ Make sure you have installed the [requirements](#requirements) if you are on Win
 
 ## Features
 <details>
-<summary>iOS 17.0 - 26.0+</summary>
+<summary>iOS 17.0 - 27.0+</summary>
 
 - PosterBoard: Animated wallpapers and descriptors.
   - Community wallpapers can be found [here][WallpapersWebsite]

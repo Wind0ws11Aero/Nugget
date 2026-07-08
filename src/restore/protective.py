@@ -25,11 +25,20 @@ import warnings
 from pathlib import Path
 from typing import Optional, Callable, cast
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from hashlib import sha1
+
+import asyncio as _asyncio
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
+import pymobiledevice3.service_connection as _sc
+import pymobiledevice3.exceptions as _pm3_exc
+
+# Bump SSL handshake timeout — the default 10 seconds is too short for
+# mobilebackup2 service startup on busy or post-reboot devices (iOS 27+).
+_DEFAULT_HANDSHAKE_TIMEOUT = 60
+_sc.DEFAULT_SSL_HANDSHAKE_TIMEOUT = _DEFAULT_HANDSHAKE_TIMEOUT
 
 from . import backup
 from .mbdb import _FileMode
@@ -162,8 +171,37 @@ class _FastBackupService(Mobilebackup2Service):
         super().__init__(lockdown)
         self._preserve_file = preserve_file
 
-    def init_mobile_backup_factory_info(self, afc):
-        root_node = self.lockdown.get_value()
+    async def connect(self, max_retries: int = 5):
+        """Connect to mobilebackup2 with retry on SSL handshake timeout.
+
+        The device can take a while to spin up the mobilebackup2 service,
+        especially post-reboot or when it's still processing a prior
+        operation. The default 10-second SSL handshake window is often
+        too tight for iOS 27+ devices.
+        """
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                return await super().connect()
+            except (_pm3_exc.ConnectionTerminatedError, ConnectionError) as e:
+                last_error = e
+                if attempt < max_retries:
+                    delay = 2 ** attempt
+                    print(
+                        f"[ProtectiveBackup] mobilebackup2 connect failed "
+                        f"(attempt {attempt}/{max_retries}), "
+                        f"retrying in {delay}s: {e}"
+                    )
+                    await _asyncio.sleep(delay)
+                else:
+                    print(
+                        f"[ProtectiveBackup] mobilebackup2 connect failed "
+                        f"after {max_retries} attempts: {e}"
+                    )
+        raise last_error  # type: ignore[misc]
+
+    async def init_mobile_backup_factory_info(self, afc):
+        root_node = self.lockdown.all_values
         return {
             "iTunes Version": "10.0.1",
             "iTunes Files": {},
@@ -181,8 +219,8 @@ class _FastBackupService(Mobilebackup2Service):
             "Applications": {},
         }
 
-    @contextmanager
-    def device_link(self, backup_directory):
+    @asynccontextmanager
+    async def device_link(self, backup_directory, **kwargs):
         """Override device_link to inject selective file filtering.
 
         We create the standard DeviceLink, then patch its upload_files
@@ -191,8 +229,8 @@ class _FastBackupService(Mobilebackup2Service):
         """
         from pymobiledevice3.services.device_link import DeviceLink
         dl = DeviceLink(self.service, Path(backup_directory))
-        dl.version_exchange()
-        self.version_exchange(dl)
+        await dl.version_exchange()
+        await self.version_exchange(dl)
         if self._preserve_file is not None:
             selective = _SelectiveDeviceLink(dl, preserve_file=self._preserve_file)
             # Replace handlers that need selective behavior.
@@ -203,7 +241,7 @@ class _FastBackupService(Mobilebackup2Service):
         try:
             yield dl
         finally:
-            dl.disconnect()
+            await dl.disconnect()
 
 # Domains whose files should be extracted for data protection.
 # KeychainDomain is intentionally excluded: enabling backup encryption
@@ -385,7 +423,7 @@ def _find_file_in_backup(backup_dir: Path, file_id: str) -> Optional[Path]:
     return None
 
 
-def collect_protective_files(
+async def collect_protective_files(
     lockdown_client: LockdownClient,
     temp_dir: str,
     progress_callback=None,
@@ -439,8 +477,8 @@ def collect_protective_files(
     os.makedirs(backup_root, exist_ok=True)
 
     # Check if the device has backup encryption enabled
-    with _FastBackupService(lockdown_client) as mb:
-        is_encrypted = mb.will_encrypt
+    async with _FastBackupService(lockdown_client) as mb:
+        is_encrypted = await mb.get_will_encrypt()
 
     scope = "photos, Apple ID, and Keychain" if backup_photos else "Apple ID and Keychain"
     _safe_callback(f"Creating full backup ({scope})..." +
@@ -450,9 +488,9 @@ def collect_protective_files(
     # The device verifies all files exist at the end of backup — discarding
     # non-protective data causes "Manifest references files not in backup".
     # We write everything to disk and prune after backup completes.
-    with _FastBackupService(lockdown_client) as mb:
-        mb.backup(full=True, backup_directory=backup_root,
-                  progress_callback=_safe_callback)
+    async with _FastBackupService(lockdown_client) as mb:
+        await mb.backup(full=True, backup_directory=backup_root,
+                        progress_callback=_safe_callback)
 
     # Locate the device-specific backup directory
     udid = lockdown_client.udid
@@ -569,27 +607,27 @@ def collect_protective_files(
     return files_list, backup_key_bag, is_encrypted
 
 
-def enable_encryption(lockdown_client: LockdownClient, password: str = "nugget_temp_keychain_27"):
+async def enable_encryption(lockdown_client: LockdownClient, password: str = "nugget_temp_keychain_27"):
     """Enable backup encryption on the device so KeychainDomain is included.
 
     KeychainDomain (AppleID credentials, WiFi passwords, etc.) is only
     included in encrypted backups.  This sets a temporary password on the
     device to enable encryption for the Phase 1 selective backup.
     """
-    with Mobilebackup2Service(lockdown_client) as mb:
-        if mb.will_encrypt:
+    async with Mobilebackup2Service(lockdown_client) as mb:
+        if await mb.get_will_encrypt():
             return True  # Already encrypted — nothing to do
-        mb.change_password("", password)
+        await mb.change_password("", password)
     return True
 
 
-def disable_encryption(lockdown_client: LockdownClient, password: str = "nugget_temp_keychain_27"):
+async def disable_encryption(lockdown_client: LockdownClient, password: str = "nugget_temp_keychain_27"):
     """Remove the temporary backup encryption password set by enable_encryption."""
     try:
-        with Mobilebackup2Service(lockdown_client) as mb:
-            if not mb.will_encrypt:
+        async with Mobilebackup2Service(lockdown_client) as mb:
+            if not await mb.get_will_encrypt():
                 return True
-            mb.change_password(password, "")
+            await mb.change_password(password, "")
     except Exception:
         pass  # Best-effort — don't block the restore if this fails
     return True
