@@ -1,0 +1,45 @@
+name: Build Windows
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  # 推送到 main/release 分支时自动触发
+  push:
+    branches: [main, release]
+    tags: ['v*']
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create virtual environment & install deps
+        run: |
+          python -m venv .env
+          .env\Scripts\activate.bat
+          pip install -r requirements.txt
+
+      - name: Find missing DLLs
+        run: |
+          .env\Scripts\activate.bat
+          python find_dlls.py
+
+      - name: Build with PyInstaller
+        run: |
+          .env\Scripts\activate.bat
+          python compile.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nugget-Windows
+          path: dist/Nugget/
+          retention-days: 30
