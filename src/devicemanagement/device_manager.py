@@ -535,7 +535,11 @@ class DeviceManager:
         if self.data_singleton.current_device.connected_via_usb:
             self.do_not_unplug = "\n" + QCoreApplication.tr("DO NOT UNPLUG")
         restore_bookrestore = use_bookrestore and not self.data_singleton.current_device.has_partial_sparserestore()
-        async with await create_using_usbmux(serial=self.data_singleton.current_device.udid) as ld:
+        # Use manual try/finally instead of async with so that ld.close()
+        # errors (e.g. ConnectionTerminatedError after device reboot) do not
+        # propagate as a misleading "Connection Lost" error to the UI.
+        ld = await create_using_usbmux(serial=self.data_singleton.current_device.udid)
+        try:
             if restore_bookrestore:
                 if self.pref_manager.bookrestore_apply_mode == BookRestoreApplyMethod.AFC:
                     # BookRestore AFC method (for both localhost and on-device)
@@ -606,7 +610,16 @@ class DeviceManager:
                     msg = QCoreApplication.tr("Please restart your device to see changes.")
                 if skips_br_for_folders:
                     msg += QCoreApplication.tr("\n\nYou should now be able to apply Feature Flags with BookRestore.")
-        return ApplyAlertMessage(txt=QCoreApplication.tr("All done! ") + msg, title=QCoreApplication.tr("Success!"), icon=QMessageBox.Information)
+            return ApplyAlertMessage(txt=QCoreApplication.tr("All done! ") + msg, title=QCoreApplication.tr("Success!"), icon=QMessageBox.Information)
+        finally:
+            # Safely close the lockdown client — after a device reboot the
+            # underlying connection is already severed and close() will raise
+            # ConnectionTerminatedError. Suppress it so the real result (success
+            # or a genuine error) reaches the caller correctly.
+            try:
+                await ld.close()
+            except Exception:
+                pass
     def progress_callback(self, progress):
         if self.update_label == None:
             return

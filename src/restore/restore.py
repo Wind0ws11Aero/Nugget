@@ -302,17 +302,31 @@ async def restore_files(files: list[FileToRestore], reboot: bool = False, lockdo
             if last_domain.startswith("AppDomain"):
                 bundle_id = last_domain.removeprefix("AppDomain-")
                 if not bundle_id in active_bundle_ids:
+                    # All AppDomain-* bundles MUST be registered in
+                    # Manifest.plist's Applications dictionary, otherwise
+                    # the device-side restore daemon will reject the domain
+                    # with MBErrorDomain/205 ("Unknown domain name").
+                    # This includes system apps like com.apple.PosterBoard.
                     if apps == None:
                         async with InstallationProxyService(lockdown=lockdown_client) as ips:
                             apps = await ips.get_apps(application_type="Any", calculate_sizes=False)
-                    app_info = apps[bundle_id]
-                    active_bundle_ids.append(bundle_id)
-                    apps_list.append(backup.AppBundle(
-                        identifier=bundle_id,
-                        path=app_info["Container"],
-                        version=app_info["CFBundleVersion"],
-                        container_content_class="Data/Application"
-                    ))
+                    try:
+                        app_info = apps[bundle_id]
+                        active_bundle_ids.append(bundle_id)
+                        apps_list.append(backup.AppBundle(
+                            identifier=bundle_id,
+                            path=app_info["Container"],
+                            version=app_info.get("CFBundleVersion", "1.0"),
+                            container_content_class="Data/Application"
+                        ))
+                    except (KeyError, Exception) as e:
+                        print(
+                            f"WARNING: AppDomain bundle '{bundle_id}'"
+                            f" not found in installation proxy"
+                            f" ({type(e).__name__}). AppDomain files"
+                            f" may cause MBErrorDomain/205."
+                        )
+                        active_bundle_ids.append(bundle_id)
 
     # crash the restore to skip the setup (only works for exploit files, NOT on iOS 27+)
     if exploit_only and (lockdown_client is None or int(lockdown_client.product_version.split(".")[0]) < 27):
@@ -379,6 +393,6 @@ def restore_file(fp: str, restore_path: str, restore_name: str, reboot: bool = F
     ])
 
     try:
-        perform_restore(backup=back, reboot=reboot, lockdown_client=lockdown_client)
+        asyncio.run(perform_restore(backup=back, reboot=reboot, lockdown_client=lockdown_client))
     except (ConnectionTerminatedError, ssl.SSLEOFError, ConnectionAbortedError, ConnectionResetError):
         pass

@@ -175,13 +175,12 @@ def _run_async_rsd_connection(address, port, files, current_device_uuid_callback
         for i in range(max_retries):
             try:
                 async with RemoteServiceDiscoveryService((address, port)) as rsd:
-                    loop = asyncio.get_running_loop()
                     
                     async def run_blocking_callback():
-                        with DvtProvider(rsd) as dvt:
+                        async with DvtProvider(rsd) as dvt:
                             await apply_bookrestore_files(files, rsd, dvt, current_device_uuid_callback, progress, transfer_mode, do_full_reboot)
 
-                    await loop.run_in_executor(None, run_blocking_callback)
+                    await run_blocking_callback()
                     return # Success
 
             except OSError as e:
@@ -379,7 +378,7 @@ async def apply_bookrestore_files(files: list[FileToRestore], lockdown_client: L
 
             # Update the download db
             if transfer_mode == BookRestoreFileTransferMethod.LocalHost:
-                z_id = generate_bldbmanager(files, temp_dl_manager, afc, server_prefix=server_prefix)
+                z_id = await generate_bldbmanager(files, temp_dl_manager, afc, server_prefix=server_prefix)
             else:
                 for file in files:
                     if not file.domain == "" and not file.domain == None:
@@ -466,7 +465,7 @@ async def apply_bookrestore_files(files: list[FileToRestore], lockdown_client: L
             
         if do_full_reboot:
             progress_callback("Rebooting")
-            reboot_device(True, lockdown_client=lockdown_client)
+            await reboot_device(True, lockdown_client=lockdown_client)
         else:
             progress_callback("Respringing")
             procs = (await ostc.get_pid_list()).get("Payload")

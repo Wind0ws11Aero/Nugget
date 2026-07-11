@@ -19,14 +19,22 @@ async def reboot_device(reboot: bool = False, lockdown_client: LockdownClient = 
         print("Remember to turn Find My back on!")
 
 async def perform_restore(backup: backup.Backup, reboot: bool = False, lockdown_client: LockdownClient = None, progress_callback = lambda x: None):
+    own_lockdown = (lockdown_client is None)
     try:
         with TemporaryDirectory() as backup_dir:
             backup.write_to_directory(Path(backup_dir))
 
-            if lockdown_client == None:
+            if own_lockdown:
                 lockdown_client = await create_using_usbmux()
             async with Mobilebackup2Service(lockdown_client) as mb:
-                await mb.restore(backup_dir, system=True, reboot=False, copy=False, source=".", progress_callback=progress_callback, skip_apps=True)
+                # skip_apps=False: required for AppDomain-* domains (PosterBoard).
+                # When True, the device-side restore daemon skips restoring
+                # data for every app in Manifest.plist's Applications dict.
+                # PosterBoard (the only tweak using AppDomain-*) must be
+                # registered there to avoid MBErrorDomain/205.
+                # Note: may trigger an iOS passcode prompt — unlock the
+                # device to proceed.
+                await mb.restore(backup_dir, system=True, reboot=False, copy=False, source=".", progress_callback=progress_callback, skip_apps=False)
             # reboot the device
             await reboot_device(reboot, lockdown_client)
     except PyMobileDevice3Exception as e:
@@ -38,3 +46,13 @@ async def perform_restore(backup: backup.Backup, reboot: bool = False, lockdown_
             raise e
         else:
             await reboot_device(reboot, lockdown_client)
+    finally:
+        # If we created this lockdown_client ourselves, close it safely.
+        # After a device reboot the connection is severed and close() will
+        # raise ConnectionTerminatedError — suppress it to avoid misleading
+        # "Connection Lost" errors in upstream callers.
+        if own_lockdown and lockdown_client is not None:
+            try:
+                await lockdown_client.close()
+            except Exception:
+                pass
