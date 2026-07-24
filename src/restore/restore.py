@@ -1,25 +1,18 @@
 import asyncio
 import os
 import plistlib
+import shutil
 import ssl
+import tempfile
+import time
 
 from . import backup, perform_restore
 from .mbdb import _FileMode
+from .protective import clean_backup_for_restore, perform_protective_backup
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from pymobiledevice3.exceptions import ConnectionTerminatedError, PyMobileDevice3Exception
-import pymobiledevice3.service_connection as _sc
-
-# Bump SSL handshake timeout — 10 seconds is too tight for post-reboot devices.
-_sc.DEFAULT_SSL_HANDSHAKE_TIMEOUT = 60
-import os
-import plistlib
-import ssl
-import tempfile
-import shutil
-import time
-from pathlib import Path
 
 class FileToRestore:
     def __init__(self,
@@ -140,137 +133,220 @@ def merge_duplicates(original_files: list[FileToRestore]) -> list[FileToRestore]
     return no_dupe_files
 
 def has_sparserestore_capability(lockdown_client: LockdownClient = None) -> bool:
-    if lockdown_client == None:
+    if lockdown_client is None:
         return True
-    ver = lockdown_client.product_version.split(".")
-    major = int(ver[0])
-    if major > 18:
-        return False
-    elif major < 18:
+    try:
+        ver = lockdown_client.product_version.split(".")
+        major = int(ver[0])
+        minor = int(ver[1]) if len(ver) > 1 else 0
+    except (ValueError, IndexError):
         return True
+    if major != 18:
+        return major < 18
     # there is no iOS 18.0.2 and 18.0.1 works with sparserestore, so no need to check the patch number
-    minor = 0
-    if len(ver) > 1:
-        minor = int(ver[1])
     return minor == 0
 
-async def _restore_ios27(back: backup.Backup, reboot: bool, lockdown_client: LockdownClient,
-                    progress_callback):
-    """iOS 27+ three-phase restore: backup → tweak → reboot → restore.
 
-    Phase 1: Selective backup of AppleID, Photos, and user settings.
-             (KeychainDomain is skipped for speed — no encryption overhead.)
-    Phase 2: Apply tweaks → reboot (triggers iOS 27 security response).
-    Phase 3: Reconnect and restore Phase 1 backup from raw directory.
+# --- iOS 27+ three-phase restore -------------------------------------------
+#
+# Progress is mapped into per-phase ranges so the GUI bar never jumps
+# backwards: Phase 1 (protective backup) 0-40, Phase 2 (sparse restore +
+# reboot) 40-60, Phase 3 (reconnect + protective restore) 60-100.
+_PHASE_BACKUP_END = 40
+_PHASE_TWEAK_END = 60
+
+# How long to wait for the device to come back after the iOS 27 security
+# recovery before giving up. Apple logo → reboot → progress bar (like
+# Erase All Contents) → full boot can take several minutes.
+_RECONNECT_TIMEOUT = 20 * 60
+
+
+def _scaled_callback(progress_callback, lo: float, hi: float):
+    """Map pymobiledevice3's raw 0-100 progress into the [lo, hi] range.
+
+    Status strings pass through untouched (the GUI shows them as labels);
+    other non-numeric values are dropped so the bar never sees garbage.
     """
-    from .protective import (
-        collect_protective_files, clean_backup_for_restore,
-    )
+    span = hi - lo
 
-    udid = lockdown_client.udid
+    def _cb(value):
+        if isinstance(value, str):
+            progress_callback(value)
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return
+        pct = max(0.0, min(100.0, float(value)))
+        progress_callback(lo + span * pct / 100.0)
 
-    # === Phase 1: Selective backup (0–33%) ===
-    # KeychainDomain is intentionally skipped: enabling backup encryption
-    # is slow and Keychain data (WiFi passwords, Apple ID credentials)
-    # is not essential for tweak functionality.
-    progress_callback(0)
-    protective_dir = tempfile.mkdtemp(prefix="nugget_protective_")
-    try:
-        await collect_protective_files(
-            lockdown_client, protective_dir,
-            progress_callback=progress_callback,
-            backup_photos=True
-        )
-    except Exception:
-        shutil.rmtree(protective_dir, ignore_errors=True)
-        raise
+    return _cb
 
-    # Clean empty placeholders and Manifest.db entries
-    backup_root = Path(protective_dir) / "device_backup"
-    clean_backup_for_restore(str(backup_root), udid)
 
-    progress_callback(33)
+async def _wait_for_device(udid: str, progress_callback,
+                           timeout: float = _RECONNECT_TIMEOUT) -> LockdownClient:
+    """Wait for the device to return after the iOS 27 security recovery.
 
-    # === Phase 2: Apply tweaks → reboot (33–66%) ===
-    try:
-        await perform_restore(backup=back, reboot=True,
-                              lockdown_client=lockdown_client,
-                              progress_callback=progress_callback)
-    except (ConnectionTerminatedError, ssl.SSLEOFError,
-            ConnectionAbortedError, ConnectionResetError):
-        pass
-
-    progress_callback(66)
-
-    # === Phase 3: Restore protective backup (66–100%) ===
-    # Uses the cleaned raw backup directory — preserves real BackupKeyBag
-    # and per-file encryption keys for any previously-encrypted domains.
+    Polls usbmux with capped exponential backoff. Fully async — the caller's
+    event loop (and the GUI) stays responsive for the whole wait.
+    """
     from pymobiledevice3.exceptions import (
         DeviceNotFoundError, PasswordRequiredError, NotPairedError,
-        ConnectionFailedError, InvalidServiceError,
+        ConnectionFailedError,
     )
-    lc = None
-    # iOS 27 security response can take several minutes:
-    # Apple logo → reboot → progress bar (like erase all contents) → full boot.
-    # Wait up to 20 minutes (40 × 30s) for the device to become available.
-    for retry in range(40):
+    start = time.monotonic()
+    deadline = start + timeout
+    delay = 5.0
+    last_error = None
+    while True:
+        elapsed = int(time.monotonic() - start)
         progress_callback(
             f"Waiting for device after security recovery "
-            f"({retry + 1}/40)..."
+            f"({elapsed // 60}:{elapsed % 60:02d} elapsed)..."
         )
-        time.sleep(30)
         try:
-            lc = await create_using_usbmux(serial=udid, autopair=True)
-            break
+            return await create_using_usbmux(serial=udid, autopair=True)
         except (DeviceNotFoundError, PasswordRequiredError, NotPairedError,
-                ConnectionFailedError):
-            pass
+                ConnectionFailedError, ConnectionError, OSError,
+                asyncio.TimeoutError) as e:
+            last_error = e
+        if time.monotonic() + delay > deadline:
+            break
+        await asyncio.sleep(delay)
+        delay = min(delay * 1.5, 30.0)
+    raise DeviceNotFoundError(
+        f"Device {udid} not reachable after reboot "
+        f"({int(timeout // 60)} min timeout). Unlock the device and make "
+        f"sure it is connected via USB. Last error: {last_error}"
+    )
 
-    if lc is None:
-        raise DeviceNotFoundError(
-            f"Device {udid} not reachable after reboot. "
-            "Unlock the device and make sure it is connected via USB."
-        )
 
-    # SpringBoard may still be launching after a fresh reboot.
-    # Without this wait the restore can fail with MBErrorDomain/1
-    # ("Timeout waiting for SpringBoard notification that it's ready for a restore").
-    progress_callback("Waiting for SpringBoard to finish launching...")
-    time.sleep(10)
+def _is_transient_restore_error(error) -> bool:
+    """True for Phase 3 errors that mean 'device still booting, try again'."""
+    name = type(error).__name__
+    msg = str(error)
+    # ssl.SSLError subclasses OSError, so this covers SSL drops too.
+    if isinstance(error, (ConnectionTerminatedError, OSError)):
+        return True
+    if "InvalidService" in name:
+        return True
+    # MBErrorDomain/1: SpringBoard not ready for a restore yet.
+    if "SpringBoard" in msg and "ready for a restore" in msg:
+        return True
+    return "start" in msg.lower() and "service" in msg.lower()
 
-    # Retry loop: iOS 27 post-security-recovery can be slow.
-    # mobilebackup2 service may be refused (InvalidServiceError) until
-    # SpringBoard fully launches.
-    max_restore_retries = 12
-    for attempt in range(max_restore_retries):
+
+async def _restore_protective_backup(lc: LockdownClient, backup_root: str,
+                                     udid: str, reboot: bool,
+                                     progress_callback) -> None:
+    """Phase 3: restore the pruned protective backup.
+
+    Retries while SpringBoard / mobilebackup2 are still coming up after the
+    security recovery (they can take minutes on iOS 27).
+    """
+    max_retries = 12
+    for attempt in range(1, max_retries + 1):
         try:
             async with Mobilebackup2Service(lc) as mb:
                 await mb.restore(
-                    str(backup_root),
+                    backup_root,
                     system=True, copy=True, remove=False,
                     reboot=reboot, source=udid,
                     skip_apps=True,
-                    progress_callback=progress_callback
+                    progress_callback=_scaled_callback(
+                        progress_callback, _PHASE_TWEAK_END + 10, 100),
                 )
-            break  # restore succeeded
-        except (PyMobileDevice3Exception, InvalidServiceError,
-                ConnectionTerminatedError, OSError) as e:
-            err_msg = str(e)
-            # MBErrorDomain/1: SpringBoard not ready yet
-            is_springboard_error = (
-                "SpringBoard" in err_msg and "ready for a restore" in err_msg
+            return
+        except (PyMobileDevice3Exception, ConnectionTerminatedError,
+                ssl.SSLError, OSError) as e:
+            if attempt >= max_retries or not _is_transient_restore_error(e):
+                raise
+            progress_callback(
+                f"Device not ready, retrying ({attempt}/{max_retries})..."
             )
-            is_service_error = (
-                "InvalidService" in type(e).__name__
-                or "start" in err_msg.lower() and "service" in err_msg.lower()
+            await asyncio.sleep(10)
+
+
+async def _restore_ios27(back: backup.Backup, reboot: bool,
+                         lockdown_client: LockdownClient, progress_callback):
+    """iOS 27+ three-phase restore: backup → tweak → reboot → restore.
+
+    Phase 1 (0-40%):  Selective backup of photos, Apple ID, and user
+                      settings. Non-protective data is discarded mid-stream,
+                      so no multi-GB full backup ever hits the disk.
+                      (KeychainDomain is skipped — enabling backup
+                      encryption is slow and not needed for tweaks.)
+    Phase 2 (40-60%): Apply tweaks via sparse restore → reboot, which
+                      triggers the iOS 27 "safe state recovery" wipe.
+    Phase 3 (60-100%): Reconnect and restore the pruned Phase 1 backup so
+                      user data survives the wipe.
+    """
+    udid = lockdown_client.udid
+    protective_dir = tempfile.mkdtemp(prefix="nugget_protective_")
+    backup_root = os.path.join(protective_dir, "device_backup")
+    os.makedirs(backup_root, exist_ok=True)
+    backup_complete = False
+    try:
+        # === Phase 1: selective protective backup (0-40%) ===
+        progress_callback(0)
+        await perform_protective_backup(
+            lockdown_client, backup_root,
+            progress_callback=_scaled_callback(progress_callback, 0, _PHASE_BACKUP_END),
+            include_photos=True,
+        )
+        backup_complete = True
+
+        # Prune Manifest.db + orphan payloads in a worker thread — a full
+        # manifest can have 100k+ rows, too heavy for the event loop.
+        removed_rows, removed_files = await asyncio.to_thread(
+            clean_backup_for_restore, backup_root, udid
+        )
+        print(f"[iOS27] Protective backup pruned: "
+              f"-{removed_rows} manifest rows, -{removed_files} payload files")
+        progress_callback(_PHASE_BACKUP_END)
+
+        # === Phase 2: apply tweaks → reboot (40-60%) ===
+        try:
+            await perform_restore(
+                backup=back, reboot=True,
+                lockdown_client=lockdown_client,
+                progress_callback=_scaled_callback(
+                    progress_callback, _PHASE_BACKUP_END, _PHASE_TWEAK_END),
             )
-            if (is_springboard_error or is_service_error) and attempt < max_restore_retries - 1:
-                progress_callback(
-                    f"Device not ready, retrying ({attempt + 1}/{max_restore_retries})..."
-                )
-                time.sleep(15)
-                continue
+        except (ConnectionTerminatedError, ssl.SSLEOFError,
+                ConnectionAbortedError, ConnectionResetError):
+            # Device rebooted before acknowledging — expected.
+            pass
+        progress_callback(_PHASE_TWEAK_END)
+
+        # === Phase 3: reconnect + restore protective backup (60-100%) ===
+        lc = await _wait_for_device(udid, progress_callback)
+        try:
+            # SpringBoard may still be launching after a fresh boot; the
+            # restore retry loop handles readiness, this just avoids an
+            # instant first failure.
+            progress_callback("Waiting for SpringBoard to finish launching...")
+            await asyncio.sleep(10)
+            await _restore_protective_backup(
+                lc, backup_root, udid, reboot, progress_callback)
+        finally:
+            try:
+                await lc.close()
+            except Exception:
+                # Connection may already be severed by the final reboot.
+                pass
+    except Exception as e:
+        if backup_complete:
+            # Phase 1 succeeded but a later phase failed: keep the backup
+            # so the user's photos/settings are recoverable, and say where.
+            kept = os.path.join(protective_dir, "device_backup")
+            print(f"[iOS27] Restore failed; protective backup kept at: {kept}")
+            try:
+                e.add_note(f"Protective backup kept at: {kept}")
+            except AttributeError:
+                pass  # Python < 3.11 — path is still in the log.
             raise
+        # Backup never completed — nothing worth keeping, don't leak data.
+        shutil.rmtree(protective_dir, ignore_errors=True)
+        raise
 
     shutil.rmtree(protective_dir, ignore_errors=True)
     progress_callback(100)
@@ -329,18 +405,22 @@ async def restore_files(files: list[FileToRestore], reboot: bool = False, lockdo
                         active_bundle_ids.append(bundle_id)
 
     # crash the restore to skip the setup (only works for exploit files, NOT on iOS 27+)
-    if exploit_only and (lockdown_client is None or int(lockdown_client.product_version.split(".")[0]) < 27):
+    ios_major = 0
+    if lockdown_client is not None:
+        try:
+            ios_major = int(lockdown_client.product_version.split(".")[0])
+        except (ValueError, IndexError, AttributeError):
+            ios_major = 0
+    if exploit_only and (lockdown_client is None or ios_major < 27):
         files_list.append(backup.ConcreteFile("", "SysContainerDomain-../../../../../../../.." + "/crash_on_purpose", contents=b""))
 
     # create the backup
     back = backup.Backup(files=files_list, apps=apps_list)
 
     # iOS 27+: use three-phase protective backup + restore
-    if lockdown_client is not None:
-        ios_major = int(lockdown_client.product_version.split(".")[0])
-        if ios_major >= 27:
-            await _restore_ios27(back, reboot, lockdown_client, progress_callback)
-            return
+    if ios_major >= 27:
+        await _restore_ios27(back, reboot, lockdown_client, progress_callback)
+        return
 
     for fi in files_list:
         print(f"{fi.domain}, {fi.path}")
